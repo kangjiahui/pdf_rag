@@ -1,0 +1,6 @@
+qa/vector_store/
+embedding/__pycache__/
+qa/__pycache__/
+embedding/progress.json
+docs/
+.DS_Store

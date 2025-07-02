@@ -1,0 +1,9 @@
+langchain
+faiss-cpu
+sentence-transformers
+transformers
+huggingface-hub
+PyMuPDF
+unstructured
+requests
+flask
