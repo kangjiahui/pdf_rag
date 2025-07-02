@@ -1,4 +1,4 @@
-GLM_API_KEY = "5a5f6c06a2ca43e6ba9d028ec9ad98bd.NODP7qvB74jJmRqG"
+GLM_API_KEY = "xxx"
 
 VECTOR_DIR = "./qa/vector_store"
 PROGRESS_PATH = "./embedding/progress.json"
