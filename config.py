@@ -7,4 +7,4 @@ CHUNK_OVERLAP = 100
 
 # 动态 Top-K 参数
 MAX_TOP_K = 8
-SCORE_THRESHOLD = 0.7  # 距离越小越相似，按 faiss score 取
+SCORE_THRESHOLD = 0.3  # 距离越小越相似，按 faiss score 取

@@ -5,6 +5,29 @@ from langchain.vectorstores import FAISS
 from langchain.embeddings.huggingface import HuggingFaceEmbeddings
 from config import VECTOR_DIR, MAX_TOP_K, SCORE_THRESHOLD
 
+def load_index():
+    if not os.path.exists(os.path.join(VECTOR_DIR, "index.faiss")):
+        raise FileNotFoundError("未找到向量库 index.faiss")
+    return FAISS.load_local(VECTOR_DIR, embedding, allow_dangerous_deserialization=True)
+
+def search_index(index, query):
+    docs_and_scores = index.similarity_search_with_score(query, k=MAX_TOP_K * 2)
+    filtered = [(doc, score) for doc, score in docs_and_scores if score >= SCORE_THRESHOLD]
+    filtered = sorted(filtered, key=lambda x: -x[1])  # 按得分降序排列
+    top_k = filtered[:MAX_TOP_K]
+    return top_k
+
+def build_prompt(query, docs):
+    context_text = ""
+    references = []
+    for i, (doc, score) in enumerate(docs):
+        metadata = doc.metadata
+        context_text += f"[文档{i+1}] {doc.page_content}\n"
+        ref = f"[文档{i+1}] {metadata.get('source', '')} | {metadata.get('chapter', '')} | 第 {metadata.get('start_page', '')} - {metadata.get('end_page', '')} 页"
+        references.append(ref)
+    prompt = f"以下是规范文档内容，请根据这些内容回答问题。\n\n{context_text}\n\n问题：{query}\n\n请基于文档回答，不要编造。\n"
+    return prompt, references
+
 # ----------- 配置区 -----------
 ZHIPU_CHAT_URL = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
 MODEL_NAME = "glm-4"
@@ -19,17 +42,13 @@ message_history = []
 # ----------- 问答函数 -----------
 def query_rag(question: str, top_k: int = 5):
     # 1. 检索文档相关内容
-    docs = db.similarity_search(question, k=top_k)
-    context = "\n\n".join([doc.page_content for doc in docs])
+    index = load_index()
+    top_docs = search_index(index, query)
+    prompt, references = build_prompt(query, top_docs)
 
     # 2. 加入 context 到 messages
     # system + 所有历史 + 当前用户问题
-    messages = [{"role": "system", "content": "你是一个行业规范解读专家，请根据用户提问和相关文档内容作答。"}]
-    messages.extend(message_history)  # 添加历史
-    messages.append({
-        "role": "user",
-        "content": f"相关文档如下：\n{context}\n\n问题是：{question}"
-    })
+    messages = message_history + [{"role": "user", "content": prompt}]
 
     headers = {
         "Content-Type": "application/json",
@@ -51,7 +70,8 @@ def query_rag(question: str, top_k: int = 5):
             # 将本轮问答加入历史
             message_history.append({"role": "user", "content": question})
             message_history.append({"role": "assistant", "content": reply})
-            return reply
+            ref_text = "\n\n📎 参考来源：\n" + "\n".join(references)
+            return reply + ref_text
         else:
             print("返回结构异常:", res)
             return "⚠️ 接口返回异常。"
