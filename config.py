@@ -1,4 +1,4 @@
-GLM_API_KEY = "cdf9626c42cc4150b12d0d6f414738bb.ZyfwwUemqaZWVVTi"
+GLM_API_KEY = "xxx"  # 替换为你的智谱 API Key
 
 VECTOR_DIR = "./qa/vector_store"
 PROGRESS_PATH = "./embedding/progress.json"
