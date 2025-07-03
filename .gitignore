@@ -1,3 +1,4 @@
+__pycache__/
 qa/vector_store/
 embedding/__pycache__/
 qa/__pycache__/

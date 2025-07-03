@@ -1,42 +1,100 @@
-# stream_embed.py
 import os
-from document_loader import load_pdf_by_page, split_text, get_tail
-from embed_and_index import (
-    embedding,
-    init_or_load_index,
-    is_page_done,
-    save_progress
-)
-from qa.config import VECTOR_DIR, TAIL_OVERLAP_CHARS
-
+import json
 from langchain.vectorstores import FAISS
+from langchain.embeddings.huggingface import HuggingFaceEmbeddings
+from langchain.schema import Document
+from document_loader import extract_toc, build_chapter_page_ranges, load_pdf_by_page, split_text
+from config import VECTOR_DIR, PROGRESS_PATH
 
-file_path = "docs/Matter Specification 1.4.1.pdf"
+embedding = HuggingFaceEmbeddings(model_name="BAAI/bge-large-zh")
 
-os.makedirs(VECTOR_DIR, exist_ok=True)
-index = init_or_load_index()
-prev_tail = ""
+def load_progress():
+    if os.path.exists(PROGRESS_PATH):
+        with open(PROGRESS_PATH, "r") as f:
+            return json.load(f)
+    return {}
 
-for page_num, page_text in load_pdf_by_page(file_path):
-    if is_page_done(file_path, page_num):
-        print(f"已处理页 {page_num}")
-        prev_tail = get_tail(page_text, TAIL_OVERLAP_CHARS)
-        continue
+def save_progress(file_path, title):
+    progress = load_progress()
+    if file_path not in progress:
+        progress[file_path] = []
+    if title not in progress[file_path]:
+        progress[file_path].append(title)
+    with open(PROGRESS_PATH, "w") as f:
+        json.dump(progress, f)
 
-    print(f"正在处理页 {page_num}")
-    combined_text = prev_tail + "\n" + page_text
-    chunks = split_text(combined_text)
-
-    if not chunks:
-        continue
-
-    if index is None:
-        index = FAISS.from_documents(chunks, embedding)
+def build_or_load_index():
+    if os.path.exists(os.path.join(VECTOR_DIR, "index.faiss")):
+        print("加载已有向量库...")
+        return FAISS.load_local(VECTOR_DIR, embedding, allow_dangerous_deserialization=True)
     else:
-        index.add_documents(chunks)
+        print("尚未创建向量库")
+        return None
 
+def save_index(index):
+    os.makedirs(VECTOR_DIR, exist_ok=True)
     index.save_local(VECTOR_DIR)
-    save_progress(file_path, page_num)
-    prev_tail = get_tail(combined_text, TAIL_OVERLAP_CHARS)
+    print(f"向量库已保存至 {VECTOR_DIR}")
 
-print("所有页面处理完毕，向量库已完成构建！")
+def process_pdf_streaming(pdf_path: str):
+    print(f"正在处理 PDF 文件：{pdf_path}")
+    filename = os.path.basename(pdf_path)
+    docs = load_pdf_by_page(pdf_path)
+    max_page = max(doc.metadata.get("page", 0) for doc in docs)
+    page_docs = {doc.metadata["page"]: doc for doc in docs}
+
+    toc = extract_toc(pdf_path)
+    index = build_or_load_index()
+
+    if toc:
+        chapters = build_chapter_page_ranges(toc, max_page)
+        print(f"章节数：{len(chapters)}")
+
+        for chapter in chapters:
+            pages = [page_docs[p].page_content for p in range(chapter["start"], chapter["end"] + 1) if p in page_docs]
+            chapter_text = "\n".join(pages)
+            meta = {"source": filename, "chapter": chapter["title"], "start_page": chapter["start"], "end_page": chapter["end"]}
+
+            if len(chapter_text) <= 1000:
+                # 单个章节直接 embedding
+                docs_or_chunks = [Document(page_content=chapter_text, metadata=meta)]
+                if index is None:
+                    index = FAISS.from_documents(docs_or_chunks, embedding)
+                else:
+                    index.add_documents(docs_or_chunks)
+                save_index(index)
+                print(f"已处理章节：{chapter['title']}")
+            else:
+                # 章节过长，切分为 chunk，逐个保存
+                chunks = split_text(chapter_text)
+                for chunk in chunks:
+                    chunk.metadata.update(meta)
+                    if index is None:
+                        index = FAISS.from_documents([chunk], embedding)
+                    else:
+                        index.add_documents([chunk])
+                    save_index(index)  # 每个 chunk 保存
+                print(f"已处理大章节：{chapter['title']}，共 {len(chunks)} 个 chunk")
+
+    else:
+        print("⚠️ 无目录，按页切分")
+        for doc in docs:
+            meta = {"source": filename, "chapter": f"第{doc.metadata.get('page', -1)}页", "start_page": doc.metadata.get('page', -1), "end_page": doc.metadata.get('page', -1)}
+            chunks = split_text(doc.page_content)
+            for chunk in chunks:
+                chunk.metadata.update(meta)
+
+            if index is None:
+                index = FAISS.from_documents(chunks, embedding)
+            else:
+                index.add_documents(chunks)
+
+            save_index(index)
+            print(f"已处理第 {doc.metadata.get('page', -1)} 页")
+
+    print("完成")
+
+if __name__ == "__main__":
+    # pdf_path = input("请输入 PDF 文件路径：").strip()
+    pdf_path = "docs/Matter Specification 1.4.1.pdf"
+    process_pdf_streaming(pdf_path)

@@ -3,7 +3,7 @@ import requests
 from config import GLM_API_KEY
 from langchain.vectorstores import FAISS
 from langchain.embeddings.huggingface import HuggingFaceEmbeddings
-from config import VECTOR_DIR
+from config import VECTOR_DIR, MAX_TOP_K, SCORE_THRESHOLD
 
 # ----------- 配置区 -----------
 ZHIPU_CHAT_URL = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
