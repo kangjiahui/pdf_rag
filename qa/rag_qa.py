@@ -22,12 +22,8 @@ def build_prompt(query, docs):
     references = []
     for i, (doc, score) in enumerate(docs):
         metadata = doc.metadata
-        # 考虑到拆分后基本不跨页，因此只使用start_page
-        start_page = metadata.get("chunk_start_page", metadata.get("start_page", ""))
-        # end_page = metadata.get("chunk_end_page", metadata.get("end_page", ""))
         context_text += f"[文档{i+1}] {doc.page_content}\n"
-        ref = f"[文档{i+1}] {metadata.get('source', '')} | {metadata.get('chapter', '')} | 第 {start_page} 页"
-        references.append(ref)
+        references.append(metadata)
     prompt = f"以下是规范文档内容，请根据这些内容回答问题。\n\n{context_text}\n\n问题：{query}\n\n请基于文档回答，不要编造。\n"
     return prompt, references
 
@@ -70,8 +66,8 @@ def query_rag(query, chat_history):
             # 将本轮问答加入历史
             chat_history.append({"role": "user", "content": query})
             chat_history.append({"role": "assistant", "content": reply})
-            ref_text = "\n\n📎 参考来源：\n" + "\n".join(references)
-            return reply, ref_text
+            # ref_text = "\n\n📎 参考来源：\n" + "\n".join(references)
+            return reply, references
         else:
             print("返回结构异常:", res)
             return "接口返回异常。", ""

@@ -8,23 +8,120 @@
 </head>
 <body class="p-4">
     <div class="container">
-        <h2>📄 文档智能问答</h2>
+        <h2>pdf文档RAG问答系统</h2>
+        <div class="mt-4">
+            <h4>上传 PDF 文档</h4>
+        
+            <!-- 上传 PDF -->
+            <input type="file" id="pdfFile" accept=".pdf" class="form-control mb-2">
+            <button class="btn btn-success" onclick="uploadPdf()">上传</button>
+        
+            <!-- 显示上传结果和 pdf_path -->
+            <div id="uploadStatus" class="mt-2 text-secondary"></div>
+        
+            <!-- 嵌入按钮 -->
+            <button class="btn btn-primary mt-2 d-none" id="embedButton" onclick="startEmbedding()">开始嵌入</button>
+        
+            <!-- 嵌入过程提示 -->
+            <div id="embedStatus" class="mt-2 text-secondary"></div>
+        </div>
+        
+        <script>
+        let uploadedPdfPath = "";
+        
+        function uploadPdf() {
+            const fileInput = document.getElementById("pdfFile");
+            if (fileInput.files.length === 0) {
+                alert("请选择 PDF 文件！");
+                return;
+            }
+        
+            const formData = new FormData();
+            formData.append("file", fileInput.files[0]);
+        
+            document.getElementById("uploadStatus").innerText = "⏳ 正在上传...";
+            document.getElementById("embedStatus").innerText = "";
+            document.getElementById("embedButton").classList.add("d-none");
+        
+            fetch("/upload", { method: "POST", body: formData })
+                .then(response => response.json())
+                .then(result => {
+                    if (result.status === "success") {
+                        uploadedPdfPath = result.pdf_path;
+                        document.getElementById("uploadStatus").innerText = "✅ 上传成功：" + uploadedPdfPath;
+                        document.getElementById("embedButton").classList.remove("d-none");
+                    } else {
+                        document.getElementById("uploadStatus").innerText = "❌ 上传失败：" + result.message;
+                    }
+                })
+                .catch(error => {
+                    console.error(error);
+                    document.getElementById("uploadStatus").innerText = "❌ 上传出错";
+                });
+        }
+        
+        function startEmbedding() {
+            if (!uploadedPdfPath) {
+                alert("请先上传 PDF");
+                return;
+            }
+        
+            document.getElementById("embedStatus").innerText = "⏳ 正在嵌入，请稍候...";
+            document.getElementById("embedButton").disabled = true;
+        
+            fetch("/embed", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ pdf_path: uploadedPdfPath })
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.status === "success") {
+                    document.getElementById("embedStatus").innerText = "✅ 嵌入完成：" + result.message;
+                } else {
+                    document.getElementById("embedStatus").innerText = "❌ 嵌入失败：" + result.message;
+                }
+                document.getElementById("embedButton").disabled = false;
+            })
+            .catch(error => {
+                console.error(error);
+                document.getElementById("embedStatus").innerText = "❌ 嵌入出错";
+                document.getElementById("embedButton").disabled = false;
+            });
+        }
+        </script>
 
         <div class="mb-3">
             <input type="text" class="form-control" name="query" id="query" placeholder="请输入你的问题">
         </div>
 
-        <button class="btn btn-primary"
-            hx-post="/ask"
-            hx-target="#chat"
-            hx-include="#query"
-            hx-swap="beforeend">
-            发送
-        </button>
+        <div class="d-flex align-items-center">
+            <button class="btn btn-primary me-3"
+                id="send-btn"
+                hx-post="/ask"
+                hx-target="#chat"
+                hx-include="#query"
+                hx-swap="beforeend">
+                发送
+            </button>
+            <span id="loading" style="display:none; color: #555;">🤖 正在生成回答...</span>
+        </div>
 
         <div id="chat" class="mt-4 border p-3 rounded" style="background:#f8f9fa; min-height: 300px;">
             <p class="text-muted">对话记录：</p>
         </div>
     </div>
+
+    <script>
+    document.body.addEventListener("htmx:beforeRequest", () => {
+        document.getElementById("loading").style.display = "inline";
+        document.getElementById("send-btn").disabled = true;
+    });
+
+    document.body.addEventListener("htmx:afterRequest", () => {
+        document.getElementById("loading").style.display = "none";
+        document.getElementById("send-btn").disabled = false;
+    });
+    </script>
 </body>
 </html>
